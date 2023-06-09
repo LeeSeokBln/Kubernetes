@@ -38,10 +38,24 @@ kubectl create ns appmesh-system
 eksctl utils associate-iam-oidc-provider --region=ap-northeast-2 --cluster 클러스터 이름 --approve
 ```
 
-## IAM 역할을 생성하고 AWSAppMeshFullAccess 및 AWSCloudMapFullAccess 정책을 연결하고 appmesh-controller Kubernetes 서비스 계정에 바인딩합니다.
+## 이후 단계에서 사용할 수 있도록 다음 변수를 설정합니다.
+```
+export CLUSTER_NAME=클러스터이름
+export AWS_REGION=리전
+```
+
+## 클러스터에 대한 OpenID Connect(OIDC) 자격 증명 공급자를 만듭니다.
+```
+eksctl utils associate-iam-oidc-provider \
+    --region=$AWS_REGION \
+    --cluster $CLUSTER_NAME \
+    --approve
+```
+
+## IAM 역할을 생성하고 여기에 AWSCloudMapFullAccessAWS관리 정책을 연결하고appmesh-controller Kubernetes 서비스 계정에 바인딩합니다. 
 ```
 eksctl create iamserviceaccount \
-    --cluster 클러스터 이름 \
+    --cluster $CLUSTER_NAME \
     --namespace appmesh-system \
     --name appmesh-controller \
     --attach-policy-arn  arn:aws:iam::aws:policy/AWSCloudMapFullAccess,arn:aws:iam::aws:policy/AWSAppMeshFullAccess \
@@ -53,7 +67,7 @@ eksctl create iamserviceaccount \
 ```
 helm upgrade -i appmesh-controller eks/appmesh-controller \
     --namespace appmesh-system \
-    --set region=ap-northeast-2 \
+    --set region=$AWS_REGION \
     --set serviceAccount.create=false \
     --set serviceAccount.name=appmesh-controller
 ```
@@ -61,32 +75,33 @@ helm upgrade -i appmesh-controller eks/appmesh-controller \
 # 매시 생성
 app-mesh-contoller 설정이 완료되면 메시 생성을 진행할 수 있습니다.
 
-### appmesh.yml
-```
-apiVersion: appmesh.k8s.aws/v1beta2
-kind: Mesh
-metadata:
-  name: knol-mesh
-spec:
-  namespaceSelector:
-    matchLabels:
-      mesh: knol-mesh 
-```
-```
-kubectl apply -f appmesh.yml
-```
-
-### 이제 메쉬가 생성되었으므로 아래와 같이 네임스페이스에 레이블을 추가하여 사이드카 주입을 활성화/비활성화할 수 있습니다.
+### 네임스페이스를 생성합니다.
 ```
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: 네임스페이스
+  name: my-apps
   labels:
+    mesh: my-mesh
     appmesh.k8s.aws/sidecarInjectorWebhook: enabled
 ```
 ```
-kubectl apply -f namespace.yml
+kubectl apply -f namespace.yaml
+```
+
+### App Mesh 서비스 메시를 생성합니다.
+```
+apiVersion: appmesh.k8s.aws/v1beta2
+kind: Mesh
+metadata:
+  name: my-mesh
+spec:
+  namespaceSelector:
+    matchLabels:
+      mesh: my-mesh
+```
+```
+kubectl apply -f mesh.yaml
 ```
 
 ### virtual-node.yml
@@ -94,122 +109,141 @@ kubectl apply -f namespace.yml
 apiVersion: appmesh.k8s.aws/v1beta2
 kind: VirtualNode
 metadata:
-  name: knol-service
-  namespace: 네임스페이스
+  name: my-service-a
+  namespace: my-apps
 spec:
-  awsName: knol-service-virtual-node
   podSelector:
     matchLabels:
-      app: knol-service
+      app: my-app-1
   listeners:
     - portMapping:
         port: 80
         protocol: http
   serviceDiscovery:
     dns:
-      hostname: knol-service.mesh-workload.svc.cluster.local
+      hostname: my-service-a.my-apps.svc.cluster.local
 ```
 ```
-kubectl apply -f virtual-node.yml
+kubectl apply -f virtual-node.yaml
 ```
 ### virtual-route.yml
 ```
 apiVersion: appmesh.k8s.aws/v1beta2
 kind: VirtualRouter
 metadata:
-  namespace: 네임스페이스
-  name: knol-service
+  namespace: my-apps
+  name: my-service-a-virtual-router
 spec:
-  awsName: knol-service-virtual-router
   listeners:
     - portMapping:
         port: 80
         protocol: http
   routes:
-    - name: route
+    - name: my-service-a-route
       httpRoute:
         match:
           prefix: /
         action:
           weightedTargets:
             - virtualNodeRef:
-                name: knol-service
+                name: my-service-a
               weight: 1
 ```
 ```
 kubectl apply -f virtual-route.yml
+```
+## 컨트롤러가 App Mesh에서 생성한 가상 라우터 리소스를 확인합니다. 컨트롤러가 App Mesh에서 가상 라우터를 만들 때 가상 라우터 이름에 Kubernetes 네임스페이스 이름을 추가했기 때문에my-service-a-virtual-router_my-apps forname 를 지정합니다.
+```
+aws appmesh describe-virtual-router --virtual-router-name my-service-a-virtual-router_my-apps --mesh-name my-mesh
 ```
 ### virtual-service.yml
 ```
 apiVersion: appmesh.k8s.aws/v1beta2
 kind: VirtualService
 metadata:
-  name: knol-service
-  namespace: 네임스페이스
+  name: my-service-a
+  namespace: my-apps
 spec:
-  awsName: knol-service-virtual-service
+  awsName: my-service-a.my-apps.svc.cluster.local
   provider:
     virtualRouter:
       virtualRouterRef:
-        name: knol-service
+        name: my-service-a-virtual-router
 ```
 ```
 kubectl apply -f virtual-service.yml
 ```
 
-### serviceaccount.yml
+### App Mesh와 함께 사용하려는 모든 포드에는 App Mesh 사이드카 컨테이너가 추가되어 있어야 합니다. 인젝터는 사용자가 지정한 레이블에 배포된 모든 포드에 사이드카 컨테이너를 자동으로 추가합니다.
+다음 콘텐츠를 컴퓨터에 proxy-auth.json이라는 파일에 저장합니다. 대체 색상 값을 고유한 값으로 바꿔야 합니다.
 ```
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: knol-service
-  namespace: 네임스페이스
-  annotations:
-    eks.amazonaws.com/role-arn: arn:aws:iam::Account_ID:role/appmesh_role
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": "appmesh:StreamAggregatedResources",
+            "Resource": [
+                "arn:aws:appmesh:Region-code:111122223333:mesh/my-mesh/virtualNode/my-service-a_my-apps"
+            ]
+        }
+    ]
+}
 ```
+### 정책을 생성합니다.
 ```
-kubectl apply -f serviceaccount.yml
+aws iam create-policy --policy-name my-policy --policy-document file://proxy-auth.json
 ```
-### deployment.yml
+### IAM 역할을 생성하고, 이전 단계에서 생성한 정책을 여기에 연결하고, Kubernetes 서비스 계정을 생성하고, 정책을 Kubernetes 서비스 계정에 바인딩합니다. 이 역할을 사용하면 컨트롤러가 App Mesh 리소스를 추가, 제거 및 변경할 수 있습니다.
+```
+eksctl create iamserviceaccount \
+    --cluster $CLUSTER_NAME \
+    --namespace my-apps \
+    --name my-service-a \
+    --attach-policy-arn  arn:aws:iam::111122223333:policy/my-policy \
+    --override-existing-serviceaccounts \
+    --approve
+```
+### Kubernetes 서비스 및 배포를 만듭니다. App Mesh와 함께 사용하려는 기존 배포가 있는 경우 하위 단계에서3 했던 것처럼 가상 노드를 배포해야2단계: App Mesh 리소스 배포 합니다. 배포를 업데이트하여 레이블이 가상 노드에 설정한 레이블과 일치하는지 확인하세요. 그러면 사이드카 컨테이너가 자동으로 포드에 추가되고 포드가 재배포됩니다.
 ```
 apiVersion: v1
 kind: Service
 metadata:
-  name: knol-service
-  namespace: 네임스페이스
+  name: my-service-a
+  namespace: my-apps
   labels:
-    app: knol-service
+    app: my-app-1
 spec:
   selector:
-    app: knol-service
+    app: my-app-1
   ports:
     - protocol: TCP
-      port: 컨테이너 포트
+      port: 80
       targetPort: 80
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: knol-service
-  namespace: 네임스페이스
+  name: my-service-a
+  namespace: my-apps
   labels:
-    app: knol-service
+    app: my-app-1
 spec:
-  replicas: 1
+  replicas: 3
   selector:
     matchLabels:
-      app: knol-service
+      app: my-app-1
   template:
     metadata:
       labels:
-        app: knol-service
+        app: my-app-1
     spec:
-      serviceAccountName: knol-service
+      serviceAccountName: my-service-a
       containers:
-      - name: 컨테이너 이름
-        image: 이미지
+      - name: nginx
+        image: nginx:1.19.0
         ports:
-          - containerPort: 포트
+        - containerPort: 80
 ```
 ```
 kubectl apply -f deployment.yml
