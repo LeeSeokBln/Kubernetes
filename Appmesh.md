@@ -57,3 +57,116 @@ helm upgrade -i appmesh-controller eks/appmesh-controller \
     --set serviceAccount.create=false \
     --set serviceAccount.name=appmesh-controller
 ```
+
+# 매시 생성
+app-mesh-contoller 설정이 완료되면 메시 생성을 진행할 수 있습니다.
+
+### appmesh.yml
+```
+apiVersion: appmesh.k8s.aws/v1beta2
+kind: Mesh
+metadata:
+  name: knol-mesh
+spec:
+  namespaceSelector:
+    matchLabels:
+      mesh: knol-mesh 
+```
+```
+kubectl apply -f appmesh.yml
+```
+
+### 이제 메쉬가 생성되었으므로 아래와 같이 네임스페이스에 레이블을 추가하여 사이드카 주입을 활성화/비활성화할 수 있습니다.
+```
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: 네임스페이스
+  labels:
+    appmesh.k8s.aws/sidecarInjectorWebhook: enabled
+```
+```
+kubectl apply -f namespace.yml
+```
+
+### virtual-node.yml
+```
+apiVersion: appmesh.k8s.aws/v1beta2
+kind: VirtualNode
+metadata:
+  name: knol-service
+  namespace: 네임스페이스
+spec:
+  awsName: knol-service-virtual-node
+  podSelector:
+    matchLabels:
+      app: knol-service
+  listeners:
+    - portMapping:
+        port: 80
+        protocol: http
+  serviceDiscovery:
+    dns:
+      hostname: knol-service.mesh-workload.svc.cluster.local
+```
+```
+kubectl apply -f virtual-node.yml
+```
+### virtual-route.yaml
+```
+apiVersion: appmesh.k8s.aws/v1beta2
+kind: VirtualRouter
+metadata:
+  namespace: 네임스페이스
+  name: knol-service
+spec:
+  awsName: knol-service-virtual-router
+  listeners:
+    - portMapping:
+        port: 80
+        protocol: http
+  routes:
+    - name: route
+      httpRoute:
+        match:
+          prefix: /
+        action:
+          weightedTargets:
+            - virtualNodeRef:
+                name: knol-service
+              weight: 1
+```
+```
+kubectl apply -f virtual-route.yml
+```
+### virtual-service.yaml
+```
+apiVersion: appmesh.k8s.aws/v1beta2
+kind: VirtualService
+metadata:
+  name: knol-service
+  namespace: 네임스페이스
+spec:
+  awsName: knol-service-virtual-service
+  provider:
+    virtualRouter:
+      virtualRouterRef:
+        name: knol-service
+```
+```
+kubectl apply -f virtual-service.yml
+```
+
+### serviceaccount.yaml
+```
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: knol-service
+  namespace: 네임스페이스
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::Account_ID:role/appmesh_role
+```
+```
+kubectl apply -f serviceaccount.yml
+```
