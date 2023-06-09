@@ -112,7 +112,7 @@ spec:
 ```
 kubectl apply -f virtual-node.yml
 ```
-### virtual-route.yaml
+### virtual-route.yml
 ```
 apiVersion: appmesh.k8s.aws/v1beta2
 kind: VirtualRouter
@@ -139,7 +139,7 @@ spec:
 ```
 kubectl apply -f virtual-route.yml
 ```
-### virtual-service.yaml
+### virtual-service.yml
 ```
 apiVersion: appmesh.k8s.aws/v1beta2
 kind: VirtualService
@@ -157,7 +157,7 @@ spec:
 kubectl apply -f virtual-service.yml
 ```
 
-### serviceaccount.yaml
+### serviceaccount.yml
 ```
 apiVersion: v1
 kind: ServiceAccount
@@ -169,4 +169,48 @@ metadata:
 ```
 ```
 kubectl apply -f serviceaccount.yml
+```
+### deployment.yml
+```
+apiVersion: v1
+kind: Service
+metadata:
+  name: knol-service
+  namespace: 네임스페이스
+  labels:
+    app: knol-service
+spec:
+  selector:
+    app: knol-service
+  ports:
+    - protocol: TCP
+      port: 컨테이너 포트
+      targetPort: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: knol-service
+  namespace: 네임스페이스
+  labels:
+    app: knol-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: knol-service
+  template:
+    metadata:
+      labels:
+        app: knol-service
+    spec:
+      serviceAccountName: knol-service
+      containers:
+      - name: 컨테이너 이름
+        image: 이미지
+        ports:
+          - containerPort: 포트
+```
+```
+kubectl apply -f deployment.yml
 ```
