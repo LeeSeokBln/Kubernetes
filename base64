@@ -1,4 +1,0 @@
-echo -n 'your_username' | base64
-echo -n 'your_password' | base64
-echo -n 'your_database_name' | base64
-echo -n 'your_endpoint_url' | base64
