@@ -49,6 +49,7 @@ vpc:
       ap-northeast-2c-priv: { id: $subnet_id }
 managedNodeGroups:
   - name: <>
+    labels: { <key>: <value> }
     instanceName: <>
     instanceType: <>
     minSize: <>
