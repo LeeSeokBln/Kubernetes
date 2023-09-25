@@ -34,9 +34,6 @@ metadata:
 cloudWatch:
   clusterLogging:
     enableTypes: ["*"]
-karpenter:
-  version: 'v0.30.0'
-  createServiceAccount: true
 iam:
   withOIDC: true
   serviceAccounts:
@@ -45,13 +42,6 @@ iam:
       namespace: kube-system
     wellKnownPolicies:
       awsLoadBalancerController: true
-  - metadata:
-      name: karpenter
-      namespace: karpenter
-    roleName: <cluster_name>-karpenter
-    attachPolicyARNs:
-    - arn:aws:iam::749692678017:policy/KarpenterControllerPolicy-<cluster_name>
-    roleOnly: true
 addons:
 - name: vpc-cni
   version: latest
@@ -70,12 +60,6 @@ vpc:
       ap-northeast-2a-priv: { id: $subnet_id }
       ap-northeast-2b-priv: { id: $subnet_id }
       ap-northeast-2c-priv: { id: $subnet_id }
-iamIdentityMappings:
-- arn: "arn:aws:iam::749692678017:role/KarpenterNodeRole-<cluster_name>"
-  username: system:node:{{EC2PrivateDNSName}}
-  groups:
-  - system:bootstrappers
-  - system:nodes
 managedNodeGroups:
   - name: <>
     labels: { <key>: <value> }
