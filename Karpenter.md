@@ -84,3 +84,13 @@ iam:
     roleOnly: true
 ```
 추가 (ALB컨트롤러는 덤)
+
+CPU사용률 확인
+```
+watch kubectl get hpa -n <ns>
+```
+
+테스트
+```
+stress -c 100
+```
