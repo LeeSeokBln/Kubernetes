@@ -39,7 +39,7 @@ spec:
   selector:
     type: stress
   ports:
-  - port: <>
+  - port: 80
     targetPort: <>
     protocol: TCP
   type: NodePort
@@ -53,9 +53,8 @@ metadata:
   namespace: skills
   annotations:
     alb.ingress.kubernetes.io/load-balancer-name: <>
-    alb.ingress.kubernetes.io/scheme: <>
-    alb.ingress.kubernetes.io/subnets: <>
-    alb.ingress.kubernetes.io/target-type: <>
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: instance
     alb.ingress.kubernetes.io/healthcheck-path: <>
 spec:
   ingressClassName: alb
@@ -68,5 +67,5 @@ spec:
           service:
             name: <>
             port:
-              number: <>
+              number: 80
 ```
