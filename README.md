@@ -30,14 +30,37 @@ kind: ClusterConfig
 metadata:
   name: <>
   region: ap-northeast-2
-  version: "1.22"
+  version: "1.27"
 cloudWatch:
   clusterLogging:
     enableTypes: ["*"]
+karpenter:
+  version: 'v0.30.0'
+  createServiceAccount: true
 iam:
   withOIDC: true
+  serviceAccounts:
+  - metadata:
+      name: aws-load-balancer-controller
+      namespace: kube-system
+    wellKnownPolicies:
+      awsLoadBalancerController: true
+  - metadata:
+      name: karpenter
+      namespace: karpenter
+    roleName: <cluster_name>-karpenter
+    attachPolicyARNs:
+    - arn:aws:iam::749692678017:policy/KarpenterControllerPolicy-<cluster_name>
+    roleOnly: true
+addons:
+- name: vpc-cni
+  version: latest
+- name: coredns
+  version: latest
+- name: kube-proxy
+  version: latest
 vpc:
-  id:
+  id: <>
   subnets:
     public:
       ap-northeast-2a-pub: { id: $subnet_id }
@@ -47,6 +70,12 @@ vpc:
       ap-northeast-2a-priv: { id: $subnet_id }
       ap-northeast-2b-priv: { id: $subnet_id }
       ap-northeast-2c-priv: { id: $subnet_id }
+iamIdentityMappings:
+- arn: "arn:aws:iam::749692678017:role/KarpenterNodeRole-<cluster_name>"
+  username: system:node:{{EC2PrivateDNSName}}
+  groups:
+  - system:bootstrappers
+  - system:nodes
 managedNodeGroups:
   - name: <>
     labels: { <key>: <value> }
