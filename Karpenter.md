@@ -54,6 +54,10 @@ spec:
         type: Utilization
         averageUtilization: 30
 ```
+deployment에 추가
+```
+      terminationGracePeriodSeconds: 0
+```
 ```
 export KARPENTER_VERSION=v0.30.0
 export AWS_PARTITION="aws" # if you are not using standard partitions, you may need to configure to aws-cn / aws-us-gov
