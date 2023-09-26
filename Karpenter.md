@@ -54,6 +54,14 @@ spec:
         type: Utilization
         averageUtilization: 30
 ```
+```
+export KARPENTER_VERSION=v0.30.0
+export AWS_PARTITION="aws" # if you are not using standard partitions, you may need to configure to aws-cn / aws-us-gov
+export CLUSTER_NAME="<cluster_name>"
+export AWS_DEFAULT_REGION="ap-northeast-2"
+export AWS_ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+export TEMPOUT=$(mktemp)
+```
 cluster.yml에
 ```
 iamIdentityMappings:
@@ -64,17 +72,20 @@ iamIdentityMappings:
   - system:nodes
 ```
 ```
+curl -fsSL https://raw.githubusercontent.com/aws/karpenter/"${KARPENTER_VERSION}"/website/content/en/preview/getting-started/getting-started-with-karpenter/cloudformation.yaml  > $TEMPOUT \
+&& aws cloudformation deploy \
+  --stack-name "Karpenter-${CLUSTER_NAME}" \
+  --template-file "${TEMPOUT}" \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides "ClusterName=${CLUSTER_NAME}"
+```
+```
 karpenter:
   version: 'v0.30.0'
   createServiceAccount: true
 iam:
   withOIDC: true
   serviceAccounts:
-  - metadata:
-      name: aws-load-balancer-controller
-      namespace: kube-system
-    wellKnownPolicies:
-      awsLoadBalancerController: true
   - metadata:
       name: karpenter
       namespace: karpenter
@@ -83,8 +94,19 @@ iam:
     - arn:aws:iam::749692678017:policy/KarpenterControllerPolicy-<cluster_name>
     roleOnly: true
 ```
-추가 (ALB컨트롤러는 덤)
-
+추가
+```
+helm upgrade --install karpenter oci://public.ecr.aws/karpenter/karpenter --version v0.30.0 --namespace karpenter --create-namespace \
+  --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"=arn:aws:iam::749692678017:role/skills-cluster-karpenter \
+  --set settings.aws.clusterName=skills-cluster \
+  --set settings.aws.defaultInstanceProfile=KarpenterNodeInstanceProfile-skills-cluster \
+  --set settings.aws.interruptionQueueName=skills-cluster \
+  --set controller.resources.requests.cpu=1 \
+  --set controller.resources.requests.memory=1Gi \
+  --set controller.resources.limits.cpu=1 \
+  --set controller.resources.limits.memory=1Gi \
+  --wait
+```
 CPU사용률 확인
 ```
 watch kubectl get hpa -n <ns>
